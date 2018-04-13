@@ -1,0 +1,123 @@
+---
+title: "UNDERSTANDING GROCERY SHOPPING BEHAVIOR"
+author: "Quang Duong"
+date: "`r Sys.Date()`"
+output:
+    # pdf_document:
+    #   highlight: pygments
+    #   fig_width: 4
+    #   fig_height: 3
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, results = "hold", message = FALSE, warning = FALSE)
+```
+In Unit 6, we saw how clustering can be used for market segmentation, the idea of dividing airline passengers into small, more similar groups, and then designing a marketing strategy specifically for each group.  In this problem, we'll see how this idea can be applied to online grocery order data.
+
+In this problem, we'll use the dataset from Instacart.com (https://www.instacart.com/datasets/grocery-shopping-2017), a grocery delivery service that connects customers with Personal Shoppers who pick up and deliver the groceries from local stores. The open data contains order, product, and aisles detailed information. In the data we prepared, each row (observation) represents a unique order, where the different product information was aggregated.  The dataset orders.csv contains the following variables:
+
+- *order_id* = the id of the order
+
+- *order_dow* = the day of the week the order was placed on
+
+- *order_hour_of_day* = the hour of the day the order was placed on
+
+- *days_since_prior_order* = days since the last order, capped at 30
+
+- *air.freshener.candles*, *asian.foods*, ... = the total number of items bought in each aisle in this order 
+
+We are interested in identifying the pattern in different types of online grocery shoppers.
+
+## Problem 1 - Reading the Data
+Read the dataset orders.csv into R as orders.
+
+What time of day are most orders placed? What is the average days since prior order?
+```{r}
+orders <- read.csv("orders.csv")
+sort(table(orders$order_hour_of_day))
+mean(orders$days_since_prior_order)
+```
+## Problem 2 - Descriptive Statistics
+What's the correlation between the orders of "fresh.fruits" and "fresh.vegetables"?
+```{r}
+cor(orders$fresh.fruits, orders$fresh.vegetables)
+```
+In the dataset, what proportion of orders have at least one item from the frozen.pizza aisle?
+```{r}
+table(orders$frozen.pizza==0)
+261/(261+4739)
+```
+## Problem 3 - Normalizing the Data
+We will only use the information about the aisles for the clustering. Run the following command to construct a subset of only aisle information on the orders:
+```{r}
+orders.aisle <- orders[,5:ncol(orders)]
+```
+It is not necessary to normalize the data, since all the aisle counts are on the same unit (number of items from each aisle). However, due to the relatively large values for fresh fruits and vegetables, it might be a good idea to nevertheless normalize the data. Normalize all of the variables in the orders.aisle dataset by entering the following commands in your R console:
+```{r}
+library(caret)
+preproc <- preProcess(orders.aisle)
+ordersNorm <- predict(preproc, orders.aisle)
+```
+What is the maximum value of frozen.dessert after normalization? What is the minimum value of soft.drinks in the normalized dataset?
+```{r}
+max(ordersNorm$frozen.dessert)
+min(ordersNorm$soft.drinks)
+```
+Run the following code to create a dendrogram of your data:
+```{r}
+distances <- dist(ordersNorm, method = "euclidean")
+ClusterProducts <- hclust(distances, method = "ward.D")
+plot(ClusterProducts, labels = FALSE)
+```
+## Problem 5 - K-means Clustering
+Run the k-means clustering algorithm on your dataset limited to the aisle information only, selecting 4 clusters. Right before using the kmeans function, type "set.seed(200)" in your R console.
+```{r}
+set.seed(200)
+kMeanCluster <- kmeans(ordersNorm, centers = 4)
+table(kMeanCluster$cluster)
+```
+## Problem 6 - Understanding the Clusters
+Now, use the cluster assignments from k-means clustering together with the cluster centroids to answer the next few questions.
+
+HINT: You can use tapply to summarize each cluster and sort to see the most frequent aisle names. Alternatively, you can use the wordcloud package to visualize what are the most common aisle names appearing in each cluster.
+```{r}
+clusterCenter <- kMeanCluster$center
+sort(clusterCenter[1,], decreasing = TRUE)[1:10]
+sort(clusterCenter[2,], decreasing = TRUE)[1:10]
+sort(clusterCenter[3,], decreasing = TRUE)[1:10]
+sort(clusterCenter[4,], decreasing = TRUE)[1:10]
+```
+## Problem 9 - Random Behavior
+
+For hierarchical clustering, we expect to always get identical results since there is no randomness involved.
+For k-means, we expect to get identical results if we set the seed to the same value as before right before the clustering. We expect to get different results if we don't set the seed, or if we set it to a different value from before.
+
+## Problem 10 - The Number of Clusters
+
+To get more general clusters, the number of clusters should be decreased. To get more specific clusters, the number of clusters should increase.
+
+## Problem 11 - Describing the Clusters
+
+Let's now look at the other information available about each order (day of the week, hour of the day, days since prior order) and see if they also differ by cluster, even though we did not use them as clustering variables.
+
+Which cluster has the latest average hour of the day?
+```{r}
+tapply(orders$order_hour_of_day, kMeanCluster$cluster, mean)
+```
+## Problem 12 - Understanding Centroids
+
+Why do we typically use cluster centroids to describe the clusters?
+
+The cluster centroid shows average behavior in a single cluster - it does not describe every single observation in that cluster or tell us how the cluster compares to other clusters.
+
+## Problem 13 - Using a Visualization
+```{r}
+library(ggplot2)
+attach(orders)
+orders$cluster <- as.factor(kMeanCluster$cluster)
+ggplot(data = orders) + geom_boxplot(aes(cluster, days_since_prior_order))
+tapply(orders$days_since_prior_order, orders$cluster, mean)
+```
+We observe that Cluster 1 has the longest average days since prior order.

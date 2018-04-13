@@ -1,0 +1,21 @@
+---
+title: "Python and R in Rmarkdown"
+author: "Quang Duong"
+date: "June 25, 2017"
+output:
+    prettydoc::html_pretty:
+    theme: tactile
+    highlight: github
+---
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib as mlb
+mlb.style.use('ggplot')
+df = pd.DataFrame(np.random.randn(10,4), columns=['a','b','c','d'])
+print(df)
+plt.plot([1,2,3],[4,5,6])
+plt.show()
+```
+

@@ -1,0 +1,153 @@
+---
+title: "Forecasting Elantra Sales"
+author: "Quang Duong"
+date: "`r Sys.Date()`"
+output:
+    pdf_document:
+      highlight: pygments
+      fig_width: 4
+      fig_height: 3
+  # prettydoc::html_pretty:
+  #   theme: cayman
+  #   highlight: github
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA)
+```
+An important application of linear regression is understanding sales. Consider a company that produces and sells a product. In a given period, if the company produces more units than how many consumers will buy, the company will not earn money on the unsold units and will incur additional costs due to having to store those units in inventory before they can be sold. If it produces fewer units than how many consumers will buy, the company will earn less than it potentially could have earned. Being able to predict consumer sales, therefore, is of first order importance to the company.
+
+In this problem, we will try to predict monthly sales of the Hyundai Elantra in the United States. The Hyundai Motor Company is a major automobile manufacturer based in South Korea. The Elantra is a car model that has been produced by Hyundai since 1990 and is sold all over the world, including the United States. We will build a linear regression model to predict monthly sales using economic indicators of the United States as well as Google search queries.
+
+The file [elantra.csv](https://d37djvu3ytnwxt.cloudfront.net/assets/courseware/v1/78f6bc572ffdf2bca928179d83723fb0/asset-v1:MITx+15.071x+2T2017+type@asset+block/elantra.csv) contains data for the problem. Each observation is a month, from January 2010 to February 2014. For each month, we have the following variables:
+
+- **Month** = the month of the year for the observation (1 = January, 2 = February, 3 = March, ...).
+- **Year** = the year of the observation.
+- **ElantraSales** = the number of units of the Hyundai Elantra sold in the United States in the given month.
+- **Unemployment** = the estimated unemployment percentage in the United States in the given month.
+- **Queries** = a (normalized) approximation of the number of Google searches for "hyundai elantra" in the given month.
+- **CPI_energy** = the monthly consumer price index (CPI) for energy for the given month.
+- **CPI_all** = the consumer price index (CPI) for all products for the given month; this is a measure of the magnitude of the prices paid by consumer households for goods and services (e.g., food, clothing, electricity, etc.).
+
+## Loading the data
+
+Load the data set. Split the data set into training and testing sets as follows: place all observations for 2012 and earlier in the training set, and all observations for 2013 and 2014 into the testing set.
+
+```{r results='hold', message=FALSE}
+elantra <- read.csv('elantra.csv')
+attach(elantra)
+train <- subset(elantra, Year<=2012)
+test <- subset(elantra, Year>2012)
+str(train)
+summary(train)
+```
+## A Linear Regression Model
+
+Build a linear regression model to predict monthly Elantra sales using Unemployment, CPI_all, CPI_energy and Queries as the independent variables. Use all of the training set data to do this.
+
+```{r}
+saleReg <- lm(ElantraSales ~ Unemployment + CPI_all + CPI_energy + Queries, data=train)
+summary(saleReg)
+```
+## Modeling Seasonality
+
+Our model R-Squared is relatively low, so we would now like to improve our model. In modeling demand and sales, it is often useful to model seasonality. Seasonality refers to the fact that demand is often cyclical/periodic in time. For example, in countries with different seasons, demand for warm outerwear (like jackets and coats) is higher in fall/autumn and winter (due to the colder weather) than in spring and summer. (In contrast, demand for swimsuits and sunscreen is higher in the summer than in the other seasons.) Another example is the "back to school" period in North America: demand for stationary (pencils, notebooks and so on) in late July and all of August is higher than the rest of the year due to the start of the school year in September.
+
+In our problem, since our data includes the month of the year in which the units were sold, it is feasible for us to incorporate monthly seasonality. From a modeling point of view, it may be reasonable that the month plays an effect in how many Elantra units are sold.
+
+To incorporate the seasonal effect due to the month, build a new linear regression model that predicts monthly Elantra sales using Month as well as Unemployment, CPI_all, CPI_energy and Queries. Do not modify the training and testing data frames before building the model.
+
+```{r}
+saleReg2 <- lm(ElantraSales ~ Month + Unemployment + CPI_all + CPI_energy + Queries, data=train)
+summary(saleReg2)
+```
+We observe that the model is not better because the adjusted R-squared has gone down and none of the variables (including the new one) are very significant.
+
+## Understanding the Model
+
+Let us try to understand our model.
+
+In the new model, given two monthly periods that are otherwise identical in Unemployment, CPI_all, CPI_energy and Queries, what is the absolute difference in predicted Elantra sales given that one period is in January and one is in March?
+
+```{r}
+110.69*2
+```
+
+In the new model, given two monthly periods that are otherwise identical in Unemployment, CPI_all, CPI_energy and Queries, what is the absolute difference in predicted Elantra sales given that one period is in January and one is in May?
+
+```{r}
+110.69*4
+```
+
+## Numeric vs. Factors
+
+You may be experiencing an uneasy feeling that there is something not quite right in how we have modeled the effect of the calendar month on the monthly sales of Elantras. If so, you are right. In particular, we added Month as a variable, but Month is an ordinary numeric variable. In fact, we must convert Month to a factor variable before adding it to the model.
+
+## A New Model
+
+Re-run the regression with the Month variable modeled as a factor variable. (Create a new variable that models the Month as a factor (using the as.factor function) instead of overwriting the current Month variable. We'll still use the numeric version of Month later in the problem.)
+
+```{r message=FALSE}
+train$MonthF <- as.factor(train$Month)
+test$MonthF <- as.factor(test$Month)
+attach(train)
+saleReg3 <- lm(ElantraSales ~ MonthF + Unemployment + CPI_all + CPI_energy + Queries)
+summary(saleReg3)
+```
+## Multicolinearity
+
+Another peculiar observation about the regression is that the sign of the Queries variable has changed. In particular, when we naively modeled Month as a numeric variable, Queries had a positive coefficient. Now, Queries has a negative coefficient. Furthermore, CPI_energy has a positive coefficient -- as the overall price of energy increases, we expect Elantra sales to increase, which seems counter-intuitive (if the price of energy increases, we'd expect consumers to have less funds to purchase automobiles, leading to lower Elantra sales).
+
+As we have seen before, changes in coefficient signs and signs that are counter to our intuition may be due to a multicolinearity problem. To check, compute the correlations of the variables in the training set.
+
+Which of the following variables is CPI_energy highly correlated with? 
+
+```{r fig.align='center'}
+library(corrplot)
+M <- cor(train[,c('Month','Unemployment','CPI_all','CPI_energy','Queries')])
+corrplot.mixed(M, upper = 'color', lower = 'number',order="hclust", addrect=2)
+```
+
+## A Reduced Model
+
+Let us now simplify our model (the model using the factor version of the Month variable). We will do this by iteratively removing variables, one at a time. Remove the variable with the highest p-value (i.e., the least statistically significant variable) from the model. Repeat this until there are no variables that are insignificant or variables for which all of the factor levels are insignificant. Use a threshold of 0.10 to determine whether a variable is significant.
+
+```{r}
+saleReg4 <- lm(ElantraSales ~ MonthF + Unemployment + CPI_all + CPI_energy)
+summary(saleReg4)
+```
+## Test Set Predictions
+Using the model from Problem 6.1, make predictions on the test set. What is the sum of squared errors of the model on the test set?
+
+```{r}
+SalePredict <- predict(saleReg4, test)
+SSE <- sum((SalePredict-test$ElantraSales)^2)
+SSE
+```
+## Comparing to a Baseline
+
+What would the baseline method predict for all observations in the test set? Remember that the baseline method we use predicts the average outcome of all observations in the training set.
+
+```{r}
+basePredict <- mean(train$ElantraSales)
+basePredict
+```
+## Test Set R-Squared
+
+```{r}
+SST <- sum((basePredict-test$ElantraSales)^2)
+1-SSE/SST
+```
+## Absolute Errors
+
+What is the largest absolute error that we make in our test set predictions?
+
+```{r}
+max(abs(SalePredict - test$ElantraSales))
+```
+## Month of Largest Error
+
+```{r}
+test[which.max(abs(SalePredict - test$ElantraSales)),c('Month','Year')]
+```
+
+

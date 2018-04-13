@@ -1,0 +1,216 @@
+---
+title: "State Data"
+author: "Quang Duong"
+date: "`r Sys.Date()`"
+output:
+    # pdf_document:
+    #   highlight: pygments
+    #   fig_width: 4
+    #   fig_height: 3
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA)
+```
+We often take data for granted. However, one of the hardest parts about analyzing a problem you're interested in can be to find good data to answer the questions you want to ask. As you're learning R, though, there are many datasets that R has built in that you can take advantage of.
+
+In this problem, we will be examining the "state" dataset, which has data from the 1970s on all fifty US states. For each state, the dataset includes the population, per capita income, illiteracy rate, murder rate, high school graduation rate, average number of frost days, area, latitude and longitude, division the state belongs to,  region the state belongs to, and two-letter abbreviation.
+
+Load the dataset and convert it to a data frame
+
+```{r}
+data(state)
+statedata <- cbind(data.frame(state.x77), state.abb, state.area, state.center,  state.division, state.name, state.region)
+```
+Inspect the data set
+
+```{r}
+str(statedata)
+summary(statedata)
+```
+## Data Exploration
+
+We begin by exploring the data. Plot all of the states' centers with latitude on the y axis (the "y" variable in our dataset) and longitude on the x axis (the "x" variable in our dataset). The shape of the plot should look like the outline of the United States! Note that Alaska and Hawaii have had their coordinates adjusted to appear just off of the west coast.
+
+```{r fig.align='center'}
+library(ggplot2)
+ggplot(statedata) + geom_point(aes(x,y))
+```
+
+Using the tapply command, determine which region of the US (West, North Central, South, or Northeast) has the highest average high school graduation rate of all the states in the region
+
+```{r}
+tapply(statedata$HS.Grad, statedata$state.region, mean)
+```
+Now, make a boxplot of the murder rate by region (for more information about creating boxplots in R, type ?boxplot in your console).
+
+Which region has the highest median murder rate?
+
+```{r fig.align='center'}
+ggplot(statedata) + geom_boxplot(aes(state.region, Murder, color=state.region)) + guides(color=FALSE)
+```
+
+You should see that there is an outlier in the Northeast region of the boxplot you just generated. Which state does this correspond to? (Hint: There are many ways to find the answer to this question, but one way is to use the subset command to only look at the Northeast data.)
+
+```{r}
+subset(statedata, state.region=='Northeast')['Murder']
+```
+## Predicting Life Expectancy - Initial Model
+
+We would like to build a model to predict life expectancy by state using the state statistics we have in our dataset.
+
+Build the model with all potential variables included (Population, Income, Illiteracy, Murder, HS.Grad, Frost, and Area). Note that you should use the variable "Area" in your model, NOT the variable "state.area".
+
+```{r message=FALSE}
+attach(statedata)
+lifeReg <- lm(Life.Exp ~ Population + Income + Illiteracy + Murder + HS.Grad + Frost + Area, data = statedata)
+summary(lifeReg)
+```
+Calculate the sum of squared errors (SSE) between the predicted life expectancies using this model and the actual life expectancies:
+```{r}
+lifePredic1 <- predict(lifeReg, statedata)
+SSE <- sum((lifePredic1 - statedata$Life.Exp)^2)
+SSE
+```
+Now plot a graph of life expectancy vs. income.
+```{r fig.align='center'}
+ggplot(statedata) + geom_point(aes(Income, Life.Exp))
+```
+
+Visually observe the plot. It is appear that life expectancy is somewhat positively correlated with income. The model we built does not display the relationship we saw from the plot of life expectancy vs. income. Multicollinearity might be an reasonable explanation for this fact. 
+
+## Predicting Life Expectancy - Refining the Model and Analyzing Predictions
+
+Recall that we discussed the principle of simplicity: that is, a model with fewer variables is preferable to a model with many unnnecessary variables. Experiment with removing independent variables from the original model. Remember to use the significance of the coefficients to decide which variables to remove (remove the one with the largest "p-value" first, or the one with the "t value" closest to zero), and to remove them one at a time (this is called "backwards variable selection"). This is important due to multicollinearity issues - removing one insignificant variable may make another previously insignificant variable become significant.
+
+```{r}
+lifeReg2 <- lm(Life.Exp ~ Population + Murder + HS.Grad + Frost, data = statedata)
+summary(lifeReg2)
+```
+Removing insignificant variables changes the Multiple R-squared value of the model. We expect the "Multiple R-squared" value of the simplified model to be slightly worse than that of the initial model. It can't be better than the "Multiple R-squared" value of the initial model.
+
+Using the simplified 4 variable model that we created, we'll now take a look at how our predictions compare to the actual values.
+
+Take a look at the vector of predictions by using the predict function (since we are just looking at predictions on the training set, you don't need to pass a "newdata" argument to the predict function). Observe the difference between our prediction and the actual values.
+
+```{r results='hold'}
+lifePredic <- predict(lifeReg2)
+SSE2 <- sum((lifePredic - statedata$Life.Exp)^2)
+SSE2
+statedata$state.name[which.min(lifePredic)]
+statedata$state.name[which.min(statedata$Life.Exp)]
+```
+
+```{r results='hold'}
+lifePredic <- predict(lifeReg2)
+statedata$state.name[which.max(lifePredic)]
+statedata$state.name[which.max(statedata$Life.Exp)]
+```
+
+```{r results='hold'}
+statedata$state.name[which.min(abs(lifeReg2$residuals))]
+statedata$state.name[which.max(abs(lifeReg2$residuals))]
+```
+## CART Models
+
+Let's now build a CART model to predict Life.Exp using all of the other variables as independent variables (Population, Income, Illiteracy, Murder, HS.Grad, Frost, Area). We'll use the default minbucket parameter, so don't add the minbucket argument. Remember that in this problem we are not as interested in predicting life expectancies for new observations as we are understanding how they relate to the other variables we have, so we'll use all of the data to build our model. You shouldn't use the method="class" argument since this is a regression tree.
+
+Plot the tree. Which of these variables appear in the tree?
+```{r results='hold', message=FALSE, warning=FALSE}
+library(rpart)
+library(rpart.plot)
+data(state)
+statedata = data.frame(state.x77)
+TreeMod <- rpart(Life.Exp ~ Population + Income + Illiteracy + Murder + HS.Grad + Frost + Area, data = statedata)
+prp(TreeMod)
+```
+
+We can see that the only variable used in the tree is "Murder".
+
+Use the regression tree you just built to predict life expectancies (using the predict function), and calculate the sum-of-squared-errors (SSE) like you did for linear regression. What is the SSE?
+```{r}
+LifePredTree <- predict(TreeMod)
+SSETree <- sum((LifePredTree- statedata$Life.Exp)^2)
+SSETree
+```
+The error is higher than for the linear regression models. One reason might be that we haven't made the tree big enough. Set the minbucket parameter to 5, and recreate the tree.
+```{r}
+TreeMod2 <- rpart(Life.Exp ~ Population + Income + Illiteracy + Murder + HS.Grad + Frost + Area, data = statedata, minbucket = 5)
+prp(TreeMod2)
+```
+```{r}
+LifePredTree2 <- predict(TreeMod2)
+SSETree2 <- sum((LifePredTree2- statedata$Life.Exp)^2)
+SSETree2
+```
+Can we do even better? Create a tree that predicts Life.Exp using only Area, with the minbucket parameter to 1. What is the SSE of this newest tree?
+```{r}
+TreeMod3 <- rpart(Life.Exp ~ Area, data = statedata, minbucket = 1)
+LifePredTree3 <- predict(TreeMod3)
+SSETree3 <- sum((LifePredTree3- statedata$Life.Exp)^2)
+SSETree3
+```
+Note that the SSE is not zero here - we still make some mistakes. This is because there are other parameters in rpart that are also trying to prevent the tree from overfitting by setting default values. So our tree doesn't necessarily have one observation in each bucket - by setting minbucket=1 we are just allowing the tree to have one observation in each bucket.
+
+This is the lowest error we have seen so far. What would be the best interpretation of this result?
+
+We can build almost perfect models given the right parameters, even if they violate our intuition of what a good model should be. correct
+
+By making the minbucket parameter very small, we could build an almost perfect model using just one variable, that is not even our most significant variable. However, if you plot the tree using prp(CARTmodel3), you can see that the tree has 22 splits! This is not a very interpretable model, and will not generalize well. Our tree model that was not overfit performed similarly to the linear regression model. Trees only look better than linear regression here because we are overfitting the model to the data. Area is not actually a very meaningful predictor. Without overfitting the tree, our model would not be very accurate only using Area.
+
+## Cross-validation
+
+Adjusting the variables included in a linear regression model is a form of model tuning. In Problem 1 we showed that by removing variables in our linear regression model (tuning the model), we were able to maintain the fit of the model while using a simpler model. A rule of thumb is that simpler models are more interpretable and generalizeable. We will now tune our regression tree to see if we can improve the fit of our tree while keeping it as simple as possible.
+
+Load the caret library, and set the seed to 111. Set up the controls exactly like we did in the lecture (10-fold cross-validation) with cp varying over the range 0.01 to 0.50 in increments of 0.01. Use the train function to determine the best cp value for a CART model using all of the available independent variables, and the entire dataset statedata. What value of cp does the train function recommend?
+```{r results='hold', message=FALSE, warning=FALSE}
+library(caret)
+set.seed(111)
+fitControl = trainControl(method = "cv", number = 10)
+cartGrid = expand.grid(.cp = seq(0.01, 0.5, 0.01))
+train(Life.Exp ~ ., data=statedata, method="rpart", trControl = fitControl, tuneGrid = cartGrid)
+```
+# Cross-Validation
+
+Create a tree with the value of cp you found in the previous problem, all of the available independent variables, and the entire dataset "statedata" as the training data. Then plot the tree.
+```{r}
+TreeMod4 <- rpart(Life.Exp ~ ., data = statedata, control = rpart.control(cp = 0.12))
+prp(TreeMod4)
+```
+
+You'll notice that this is actually quite similar to the first tree we created with the initial model. Interpret the tree: we predict the life expectancy to be 70 if the murder rate is greater than or equal to 6.6 and is less than 11.
+
+Calculate the SSE of this tree:
+```{r}
+LifePredTree4 <- predict(TreeMod4)
+SSETree4 <- sum((LifePredTree4 - statedata$Life.Exp)^2)
+SSETree4
+```
+Recall the first tree (default parameters), second tree (minbucket = 5), and the third tree (selected with cross validation) we made. Given what you have learned about cross-validation, which of the three models would you expect to be better if we did use it for prediction on a test set? For this question, suppose we had actually set aside a few observations (states) in a test set, and we want to make predictions on those states.
+
+The model we just made with the "best" cp
+
+The purpose of cross-validation is to pick the tree that will perform the best on a test set. So we would expect the model we made with the "best" cp to perform best on a test set.
+
+At the end of Problem 2 we made a very complex tree using just Area. Use train with the same parameters as before but just using Area as an independent variable to find the best cp value (set the seed to 111 first). Then build a new tree using just Area and this value of cp.
+
+How many splits does the tree have?
+```{r message=FALSE, warning=FALSE}
+set.seed(111)
+train(Life.Exp ~ Area, data=statedata, method="rpart", trControl = fitControl, tuneGrid = cartGrid)
+```
+```{r}
+TreeMod5 <- rpart(Life.Exp ~ Area, data = statedata, control = rpart.control(cp = 0.02))
+prp(TreeMod5)
+```
+
+The lower left leaf (or bucket) corresponds to the lowest predicted Life.Exp of 70. Observations in this leaf correspond to states with area greater than or equal to 9579 and area less than 51e+3.
+
+We have simplified the previous "Area tree" considerably by using cross-validation. Calculate the SSE of the cross-validated "Area tree", and select all of the following correct statements that apply:
+```{r}
+LifePredTree5 <- predict(TreeMod5)
+SSETree5 <- sum((LifePredTree5 - statedata$Life.Exp)^2)
+SSETree5
+```

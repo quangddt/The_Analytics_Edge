@@ -1,0 +1,163 @@
+---
+title: "FORECASTING NATIONAL PARKS VISITS"
+author: "Quang Duong"
+date: "`r Sys.Date()`"
+output:
+    # pdf_document:
+    #   highlight: pygments
+    #   fig_width: 4
+    #   fig_height: 3
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, results = "hold", message = FALSE, warning = FALSE)
+```
+The U.S. National Parks System includes 417 areas including national parks, monuments, battlefields, military parks, historical parks, historical sites, lakeshores, seashores, recreation areas, scenic rivers and trails, and the White House (see map in Figure 1). Every year, hundreds of millions of recreational visitors come to the parks. What do we know about the parks that can affect the visitor counts? Can we forecast the monthly visits to a given park accurately? To derive insights and answer these questions, we take a look at the historical visits data and the parks information released by the National Parks Service (NPS). 
+
+For this problem, we obtained monthly visits data between 2010 and 2016 (source: https://irma.nps.gov/Stats/Reports/National). We also got park-specific data via the NPS API (https://developer.nps.gov/api/index.htm). The aggregated dataset [park_visits.csv]https://d37djvu3ytnwxt.cloudfront.net/assets/courseware/v1/559e68ca8132a107eea309abb699223a/asset-v1:MITx+15.071x+2T2017+type@asset+block/park_visits.csv results in a total of 12 variables and 25587 observations. Each observation contains one record per park per month. Here's a detailed description of the variables:
+
+- **ParkName**: The full name of the park.
+
+- **ParkType**: The type of the park. For this study we restrict ourselves to the following more frequently visited types: National Battlefield, National Historic Site, National Historical Park, National Memorial, National Monument, National Park, National Recreation Area, and National Seashore.
+
+- **Region**: The region of the park, including Alaska, Intermountain, Midwest, National Capital, Northeast, Pacific West, and Southeast.
+
+- **State**: The abbreviation of the state where the park resides.
+
+- **Year**, **Month**: the year and the month for the visits.
+
+- **lat**, **long**: Latitude and longitude of the park.
+
+- **Cost**: a simple extraction of the park's entrance fee. Some parks may have multiple levels of entrance fees (differ by transportation methods, age, military status, etc.); for this problem, we only extracted the first available cost information.
+
+- **logVisits**: Natural logarithm of the recreational visits (with one added to the visits to avoid taking logs of zero) to the park in the given year and month.
+
+- **laglogVisits**: the logVisits from last month.
+
+-**laglogVisitsYear**: the logVisits from last year.
+
+## Problem 1 - Number of National Parks in Jan 2016
+
+Load park_visits.csv into a data frame called visits.
+
+Let's first look at the visits in July 2016. Subset the observations to this year and month, name it visits2016jul. Work with this data subset for the next three problems.
+
+Which park type has the most number of parks? Which specific park has the most number of visitors?
+```{r}
+visits <- read.csv("park_visits.csv")
+visits2016jul <- subset(visits, Year==2016 & Month==7)
+sort(table(visits2016jul$ParkType))
+visits2016jul[which.max(visits2016jul$logVisits),]
+```
+## Problem 2 - Relationship Between Region and Visits
+
+Which region has the highest average log visits in July 2016? 
+```{r}
+sort(tapply(visits2016jul$logVisits, visits2016jul$Region, mean))
+```
+## Problem 3 - Relationship Between Cost and Visits
+
+What is the correlation between entrance fee (the variable cost) and the log visits in July 2016?
+```{r}
+cor(visits2016jul$cost, visits2016jul$logVisits)
+```
+## Problem 4 - Time Series Plot of Visits
+
+Let's now look at the time dimension of the data. Subset the original data (visits) to "Yellowstone NP" only and save as ys. Use the following code to plot the logVisits through the months between 2010 and 2016:
+```{r}
+ys <- subset(visits, visits$ParkName=="Yellowstone NP")
+ys_ts <- ts(ys$logVisits, start=c(2010,1), freq=12)
+plot(ys_ts)
+```
+## Problem 5 - Missing Values
+
+Note that there are some NA's in the data - you can run colSums(is.na(visits)) to see the summary.
+
+To deal with the missing values, we will simply remove the observations with the missing values first (there are more sophisticated ways to work with missing values, but for this purpose removing the observations is fine).
+```{r}
+visits <- visits[rowSums(is.na(visits))==0,]
+str(visits)
+```
+## Problem 6 - Predicting Visits
+
+We are interested in predicting the log visits. Before doing the split, let's also make Month a factor variable by including the following:
+```{r}
+visits$Month <- as.factor(visits$Month)
+```
+Subset our dataset into a training and a testing set by splitting based on the year: training would contain 2010-2014 years of data, and testing would be 2015-2016 data.
+
+Let's build now a simple linear regression model "mod" using the training set to predict the log visits. As a first step, we only use the laglogVisits variable (log visits from last month).
+```{r}
+library(caTools)
+trainSet <- subset(visits, visits$Year<=2014)
+testSet <- subset(visits, visits$Year>=2015)
+mod <- lm(logVisits ~ laglogVisits, data = trainSet)
+summary(mod)
+logVisitsPred <- predict(mod, newdata = testSet)
+TSS <- sum((testSet$logVisits-mean(trainSet$logVisits))**2)
+SSE <- sum((logVisitsPred-testSet$logVisits)**2)
+1-SSE/TSS
+```
+## Problem 7 - Add New Variables
+
+We see that the model achieves good predictive power already simply using the previous month's visits. To see if the other knowledge we have about the parks can improve the model, let's add these variables in a new model.
+
+The new model would have the following variables:
+
+laglogVisits, laglogVisitsYear, Year, Month, Region, ParkType, and cost
+```{r}
+attach(visits)
+mod2 <- lm(logVisits ~ laglogVisits + laglogVisitsYear + Year + Month + Region + ParkType + cost, data = trainSet)
+summary(mod2)
+```
+```{r}
+logVisitsPred2 <- predict(mod2 , newdata = testSet)
+MSE2 <-sum((testSet$logVisits-logVisitsPred2)**2)
+1-MSE2/TSS
+```
+## Problem 9 - Regression Trees
+
+In addition to the logistic regression model, we can also train a regression tree. Use the same set of variables as the previous problem (laglogVisits, laglogVisitsYear, Year, Month, Region, ParkType, and cost), train a regression tree with cp = 0.05.
+```{r}
+library(rpart)
+library(rpart.plot)
+regressionTree <- rpart(logVisits ~ laglogVisits + laglogVisitsYear + Year + Month + Region + ParkType + cost, data = trainSet, control = rpart.control(cp=0.05))
+rpart.plot(regressionTree)
+treePred <- predict(regressionTree, newdata = testSet)
+MSE3 <- sum((treePred-testSet$logVisits)**2)
+1-MSE3/TSS
+```
+## Problem 10 - Regression Trees with CV
+
+The out-of-sample R2 does not appear to be very good under regression trees, compared to a linear regression model. We could potentially improve it via cross validation.
+
+Set seed to 201, run a 10-fold cross-validated cart model, with cp ranging from 0.0001 to 0.005 in increments of 0.0001. What is optimal cp value on this grid?
+
+```{r}
+library(caret)
+cpGrid <- expand.grid(.cp=seq(0.0001,0.005,0.0001))
+cpControl <- trainControl(method = "cv", number = 10)
+set.seed(201)
+train(logVisits ~ laglogVisits + laglogVisitsYear + Year + Month + Region + ParkType + cost, data = trainSet, method = "rpart", trControl = cpControl, tuneGrid = cpGrid)
+```
+## Problem 11 - Final Regression Tree
+
+Rerun the regression tree on the training data, now using the cp value equal to the one selected in the previous problem
+```{r}
+regressionTree2 <- rpart(logVisits ~ laglogVisits + laglogVisitsYear + Year + Month + Region + ParkType + cost, data = trainSet, control = rpart.control(cp=0.0001))
+treePred2 <- predict(regressionTree2, newdata = testSet)
+MSE4 <- sum((treePred2-testSet$logVisits)**2)
+1-MSE4/TSS
+```
+## Problem 12 - Random Forest
+We can potentially further improve the models by using a random forest. Set seed to 201 again. Train a random forest model with the same set of covariates, and using just default parameters (no need to specify). This may take a few minutes.
+```{r}
+library(randomForest)
+set.seed(201)
+RF <- randomForest(logVisits ~ laglogVisits + laglogVisitsYear + Year + Month + Region + ParkType + cost, data = trainSet)
+RFPred <- predict(RF, newdata = testSet)
+MSE5 <- sum((RFPred-testSet$logVisits)**2)
+1-MSE5/TSS
+```
